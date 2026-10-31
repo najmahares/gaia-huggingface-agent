@@ -3,9 +3,7 @@ import re
 import gradio as gr
 import requests
 import pandas as pd
-from smolagents import CodeAgent, DuckDuckGoSearchTool, Tool, OpenAIServerModel
-from smolagents.models import OpenAIServerModel
-
+from smolagents import CodeAgent, DuckDuckGoSearchTool, Tool, LiteLLMModel
 
 DEFAULT_API_URL = "https://agents-course-unit4-scoring.hf.space"
 
@@ -23,13 +21,11 @@ class WikipediaSearchTool(Tool):
     def forward(self, query: str) -> str:
         import wikipedia
         try:
-           
             return wikipedia.summary(query, sentences=5)
         except Exception as e:
             return f"Wikipedia search failed: {e}"
 
-
-GAIA_RULES = """You are an expert AI agent solving the GAIA benchmark.
+GAIA_SYSTEM_PROMPT = """You are an expert AI agent solving the GAIA benchmark.
 Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
 1. Return ONLY the final answer. No explanations, no preamble, no "The answer is".
 2. For numbers, use digits (e.g., "42" not "forty-two").
@@ -40,32 +36,34 @@ Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
 7. If you need to do math or data manipulation, write and execute Python code.
 """
 
-
-class Agent:
+class AdvancedAgent:
     def __init__(self):
         print("Initializing AdvancedAgent...")
-       
-        self.model = OpenAIServerModel(
-            model_id="gemini-2.0-flash",
-            api_base="https://generativelanguage.googleapis.com/v1beta/openai/",
-            api_key=os.getenv("GEMINI_API_KEY"),
+        
+        self.model = LiteLLMModel(
+            model_id="groq/llama-3.3-70b-versatile",
+            api_key=os.getenv("GROQ_API_KEY"),
+            temperature=0.1,
         )
         
         self.tools = [
-            DuckDuckGoSearchTool(),
+            DuckDuckGoSearchTool(max_results=5, rate_limit=2.0),
             WikipediaSearchTool(),
         ]
         
         self.agent = CodeAgent(
             model=self.model,
             tools=self.tools,
+            add_base_tools=True,
+            additional_authorized_imports=[
+                "pandas", "numpy", "requests", "datetime", "re",
+                "json", "math", "statistics", "itertools", "collections",
+            ],
             max_steps=10,
             verbosity_level=1,
-            additional_authorized_imports=["pandas", "numpy", "math", "datetime"],
         )
         
-        
-        self.agent.prompt_templates["system_prompt"] += "\n\n" + GAIA_RULES
+        self.agent.prompt_templates["system_prompt"] = GAIA_SYSTEM_PROMPT + "\n\n" + self.agent.prompt_templates["system_prompt"]
         print("Agent initialized successfully.")
 
     def __call__(self, question: str) -> str:
@@ -74,10 +72,10 @@ class Agent:
             answer = self.agent.run(question)
             answer = str(answer).strip()
             
-            
             preamble_patterns = [
                 r"(?i)^the answer is[:\s]+",
                 r"(?i)^final answer[:\s]+",
+                r"(?i)^based on .*?,\s*",
             ]
             for pattern in preamble_patterns:
                 answer = re.sub(pattern, "", answer).strip()
@@ -92,13 +90,12 @@ def run_and_submit_all(username: str, agent_code: str):
         return "Please enter both your Username and Agent Code URL.", None
 
     print(f"Running for user: {username}")
-    
     api_url = DEFAULT_API_URL
     questions_url = f"{api_url}/questions"
     submit_url = f"{api_url}/submit"
 
     try:
-        agent = Agent()
+        agent = AdvancedAgent()
     except Exception as e:
         return f"Error initializing agent: {e}", None
 
@@ -142,7 +139,6 @@ def run_and_submit_all(username: str, agent_code: str):
         return final_status, pd.DataFrame(results_log)
     except requests.exceptions.RequestException as e:
         return f"Submission Failed: {e}", pd.DataFrame(results_log)
-
 
 with gr.Blocks() as demo:
     gr.Markdown("# GAIA Advanced Agent Runner")
