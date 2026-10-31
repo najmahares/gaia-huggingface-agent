@@ -33,8 +33,8 @@ Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
 4. For yes/no questions, return exactly "Yes" or "No".
 5. If a list is requested, return comma-separated values.
 6. Use the web search and wikipedia tools to find facts before answering.
+7. **CRITICAL:** If your tools return an error (like 'No results found'), do NOT try the exact same search again. Try ONE different search. If it still fails, provide your best educated guess.
 """
-
 class AdvancedAgent:
     def __init__(self):
         print("Initializing AdvancedAgent...")
