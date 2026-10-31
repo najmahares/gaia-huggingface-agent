@@ -1,5 +1,6 @@
 import os
 import re
+import time
 import gradio as gr
 import requests
 import pandas as pd
@@ -33,8 +34,9 @@ Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
 4. For yes/no questions, return exactly "Yes" or "No".
 5. If a list is requested, return comma-separated values.
 6. Use the web search and wikipedia tools to find facts before answering.
-7. **CRITICAL:** If your tools return an error (like 'No results found'), do NOT try the exact same search again. Try ONE different search. If it still fails, provide your best educated guess.
+7. CRITICAL: If your tools return an error (like 'No results found'), do NOT try the exact same search again. Try ONE different search. If it still fails, provide your best educated guess.
 """
+
 class AdvancedAgent:
     def __init__(self):
         print("Initializing AdvancedAgent...")
@@ -115,6 +117,9 @@ def run_and_submit_all(username: str, agent_code: str):
             results_log.append({"Task ID": task_id, "Question": question_text, "Submitted Answer": submitted_answer})
         except Exception as e:
              results_log.append({"Task ID": task_id, "Question": question_text, "Submitted Answer": f"AGENT ERROR: {e}"})
+        
+        print("Sleeping for 5 seconds to avoid API rate limits...")
+        time.sleep(5)
 
     if not answers_payload:
         return "Agent did not produce any answers.", pd.DataFrame(results_log)
