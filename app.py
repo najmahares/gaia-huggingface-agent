@@ -4,84 +4,63 @@ import time
 import gradio as gr
 import requests
 import pandas as pd
-from smolagents import CodeAgent, DuckDuckGoSearchTool, Tool, LiteLLMModel
+from ddgs import DDGS
+from groq import Groq
 
 DEFAULT_API_URL = "https://agents-course-unit4-scoring.hf.space"
 
-class WikipediaSearchTool(Tool):
-    name = "wikipedia_search"
-    description = "Search Wikipedia for a given query to get factual information."
-    inputs = {
-        "query": {
-            "type": "string",
-            "description": "The search query string"
-        }
-    }
-    output_type = "string"
-
-    def forward(self, query: str) -> str:
-        import wikipedia
-        try:
-            return wikipedia.summary(query, sentences=5)
-        except Exception as e:
-            return f"Wikipedia search failed."
-
-GAIA_SYSTEM_PROMPT = """You are an expert AI agent solving the GAIA benchmark.
-Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
-1. Return ONLY the final answer. No explanations, no preamble, no "The answer is".
-2. For numbers, use digits (e.g., "42" not "forty-two").
-3. For names, use exact spelling and capitalization.
-4. If a list is requested, return comma-separated values.
-5. CRITICAL: When you find the answer in the search results, STOP immediately. Do not run another search. Output the answer using the final_answer tool.
-"""
-
-class AdvancedAgent:
+class FastAgent:
     def __init__(self):
-        print("Initializing AdvancedAgent...")
-        
-        self.model = LiteLLMModel(
-            model_id="gemini/gemini-3.8-flash",
-            api_key=os.getenv("GEMINI_API_KEY"),
-            reasoning_effort="low",  # Lowers latency from 30-120s to 3-7s per step
-        )
-        
-        self.tools = [
-            DuckDuckGoSearchTool(max_results=5, rate_limit=2.0),
-            WikipediaSearchTool(),
-        ]
-        
-        self.agent = CodeAgent(
-            model=self.model,
-            tools=self.tools,
-            add_base_tools=True,
-            additional_authorized_imports=[
-                "pandas", "numpy", "requests", "datetime", "re",
-                "json", "math", "statistics", "itertools", "collections",
-            ],
-            max_steps=6,
-            verbosity_level=1,
-        )
-        
-        self.agent.prompt_templates["system_prompt"] = GAIA_SYSTEM_PROMPT + "\n\n" + self.agent.prompt_templates["system_prompt"]
-        print("Agent initialized successfully.")
+        print("Initializing FastAgent...")
+        # Initialize the Groq client directly
+        self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
 
     def __call__(self, question: str) -> str:
-        print(f"Agent reasoning on: {question[:80]}...")
+        print(f"Searching for: {question[:60]}...")
+        
+        # 1. Perform the web search
+        search_context = ""
         try:
-            answer = self.agent.run(question)
-            answer = str(answer).strip()
-            
-            preamble_patterns = [
-                r"(?i)^the answer is[:\s]+",
-                r"(?i)^final answer[:\s]+",
-                r"(?i)^based on .*?,\s*",
-            ]
-            for pattern in preamble_patterns:
-                answer = re.sub(pattern, "", answer).strip()
-                
-            return answer
+            # Get top 3 results from DuckDuckGo
+            results = list(DDGS().text(question, max_results=3))
+            for r in results:
+                search_context += f"Title: {r.get('title', '')}\nSnippet: {r.get('body', '')}\n\n"
         except Exception as e:
-            print(f"Agent error: {e}")
+            search_context = "No search results found."
+
+        # 2. Ask the super-fast Groq model to read the context and answer
+        prompt = f"""You are solving the GAIA benchmark. Your answer is graded by EXACT STRING MATCH.
+        
+Web Search Results:
+{search_context}
+
+Question: {question}
+
+Rules for your answer:
+- Return ONLY the exact answer. No explanations, no conversational text.
+- If it's a number, use digits (e.g., 42).
+- If it's a name, use exact spelling.
+- If it's a list, use comma-separated values.
+- If the search results do not contain the answer, use your best guess.
+
+Answer:"""
+
+        try:
+            response = self.client.chat.completions.create(
+                messages=[{"role": "user", "content": prompt}],
+                model="llama-3.1-8b-instant", # Extremely fast model on Groq
+                temperature=0.0,
+                max_tokens=50
+            )
+            answer = response.choices[0].message.content.strip()
+            
+            # Clean up any accidental formatting
+            answer = re.sub(r"(?i)^the answer is[:\s]+", "", answer).strip()
+            answer = re.sub(r"(?i)^final answer[:\s]+", "", answer).strip()
+            return answer
+            
+        except Exception as e:
+            print(f"Groq API Error: {e}")
             return "Unable to determine"
 
 def run_and_submit_all(username: str, agent_code: str):
@@ -94,7 +73,7 @@ def run_and_submit_all(username: str, agent_code: str):
     submit_url = f"{api_url}/submit"
 
     try:
-        agent = AdvancedAgent()
+        agent = FastAgent()
     except Exception as e:
         return f"Error initializing agent: {e}", None
 
@@ -114,15 +93,17 @@ def run_and_submit_all(username: str, agent_code: str):
         question_text = item.get("question")
         if not task_id or question_text is None:
             continue
+        
         try:
             submitted_answer = agent(question_text)
             answers_payload.append({"task_id": task_id, "submitted_answer": submitted_answer})
             results_log.append({"Task ID": task_id, "Question": question_text, "Submitted Answer": submitted_answer})
+            print(f"Answer: {submitted_answer}")
         except Exception as e:
              results_log.append({"Task ID": task_id, "Question": question_text, "Submitted Answer": f"AGENT ERROR: {e}"})
         
-        print("Sleeping for 3 seconds...")
-        time.sleep(3)
+        # Small pause to prevent DDG from blocking us
+        time.sleep(2)
 
     if not answers_payload:
         return "Agent did not produce any answers.", pd.DataFrame(results_log)
@@ -143,7 +124,7 @@ def run_and_submit_all(username: str, agent_code: str):
         return f"Submission Failed: {e}", pd.DataFrame(results_log)
 
 with gr.Blocks() as demo:
-    gr.Markdown("# GAIA Advanced Agent Runner")
+    gr.Markdown("# GAIA Fast Agent Runner")
     
     username_input = gr.Textbox(label="Hugging Face Username", placeholder="e.g., najmahares")
     agent_code_input = gr.Textbox(label="Agent Code URL (GitHub)", placeholder="e.g., https://github.com/your-username/your-repo")
