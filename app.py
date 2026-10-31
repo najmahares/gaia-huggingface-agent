@@ -24,17 +24,17 @@ class WikipediaSearchTool(Tool):
         try:
             return wikipedia.summary(query, sentences=5)
         except Exception as e:
-            return f"Wikipedia search failed: {e}"
+            return f"Wikipedia search failed. Try web_search instead."
 
 GAIA_SYSTEM_PROMPT = """You are an expert AI agent solving the GAIA benchmark.
 Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
 1. Return ONLY the final answer. No explanations, no preamble, no "The answer is".
 2. For numbers, use digits (e.g., "42" not "forty-two").
 3. For names, use exact spelling and capitalization.
-4. For yes/no questions, return exactly "Yes" or "No".
-5. If a list is requested, return comma-separated values.
-6. Use the web search and wikipedia tools to find facts before answering.
-7. CRITICAL: If your tools return an error (like 'No results found'), do NOT try the exact same search again. Try ONE different search. If it still fails, provide your best educated guess.
+4. If a list is requested, return comma-separated values.
+5. Use the web search tools to find facts.
+6. **CRITICAL:** If the search results already contain the answer, DO NOT search again. Stop and output the answer.
+7. If a tool fails with an error, DO NOT retry it. Use the information you already have.
 """
 
 class AdvancedAgent:
@@ -48,14 +48,14 @@ class AdvancedAgent:
         )
         
         self.tools = [
-            DuckDuckGoSearchTool(max_results=5, rate_limit=2.0),
+            DuckDuckGoSearchTool(max_results=3, rate_limit=2.0),
             WikipediaSearchTool(),
         ]
         
         self.agent = ToolCallingAgent(
             model=self.model,
             tools=self.tools,
-            max_steps=10,
+            max_steps=4, # Lowered from 10 to prevent token limits
             verbosity_level=1,
         )
         
