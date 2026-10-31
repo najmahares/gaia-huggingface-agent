@@ -3,7 +3,7 @@ import re
 import gradio as gr
 import requests
 import pandas as pd
-from smolagents import CodeAgent, DuckDuckGoSearchTool, Tool, LiteLLMModel
+from smolagents import ToolCallingAgent, DuckDuckGoSearchTool, Tool, LiteLLMModel
 
 DEFAULT_API_URL = "https://agents-course-unit4-scoring.hf.space"
 
@@ -33,7 +33,6 @@ Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
 4. For yes/no questions, return exactly "Yes" or "No".
 5. If a list is requested, return comma-separated values.
 6. Use the web search and wikipedia tools to find facts before answering.
-7. If you need to do math or data manipulation, write and execute Python code.
 """
 
 class AdvancedAgent:
@@ -51,14 +50,9 @@ class AdvancedAgent:
             WikipediaSearchTool(),
         ]
         
-        self.agent = CodeAgent(
+        self.agent = ToolCallingAgent(
             model=self.model,
             tools=self.tools,
-            add_base_tools=True,
-            additional_authorized_imports=[
-                "pandas", "numpy", "requests", "datetime", "re",
-                "json", "math", "statistics", "itertools", "collections",
-            ],
             max_steps=10,
             verbosity_level=1,
         )
