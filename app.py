@@ -12,23 +12,44 @@ DEFAULT_API_URL = "https://agents-course-unit4-scoring.hf.space"
 class FastAgent:
     def __init__(self):
         print("Initializing FastAgent...")
-        # Initialize the Groq client directly
         self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+        
+        self.model_id = None
+        try:
+            models = self.client.models.list()
+            available_models = [m.id for m in models.data]
+            
+            preferred_models = [
+                "llama-3.3-70b-versatile",
+                "openai/gpt-oss-120b",  # 120b is slightly smarter than 20b
+                "openai/gpt-oss-20b",
+                "qwen/qwen3.8-27b"
+            ]
+            
+            for pref in preferred_models:
+                if pref in available_models:
+                    self.model_id = pref
+                    break
+            
+            if not self.model_id:
+                self.model_id = "openai/gpt-oss-20b"
+                        
+            print(f"Selected model: {self.model_id}")
+        except Exception as e:
+            print(f"Could not fetch model list: {e}")
+            self.model_id = "openai/gpt-oss-20b"
 
     def __call__(self, question: str) -> str:
         print(f"Searching for: {question[:60]}...")
         
-        # 1. Perform the web search
         search_context = ""
         try:
-            # Get top 3 results from DuckDuckGo
             results = list(DDGS().text(question, max_results=3))
             for r in results:
                 search_context += f"Title: {r.get('title', '')}\nSnippet: {r.get('body', '')}\n\n"
         except Exception as e:
             search_context = "No search results found."
 
-        # 2. Ask the super-fast Groq model to read the context and answer
         prompt = f"""You are solving the GAIA benchmark. Your answer is graded by EXACT STRING MATCH.
         
 Web Search Results:
@@ -48,15 +69,20 @@ Answer:"""
         try:
             response = self.client.chat.completions.create(
                 messages=[{"role": "user", "content": prompt}],
-                model="llama-3.1-8b-instant", # Extremely fast model on Groq
+                model=self.model_id,
                 temperature=0.0,
-                max_tokens=50
+                max_tokens=500  # INCREASED from 50 to 500 so it has room to think!
             )
-            answer = response.choices[0].message.content.strip()
+            answer = response.choices[0].message.content
+            answer = answer.strip() if answer else ""
             
             # Clean up any accidental formatting
             answer = re.sub(r"(?i)^the answer is[:\s]+", "", answer).strip()
             answer = re.sub(r"(?i)^final answer[:\s]+", "", answer).strip()
+            
+            if not answer:
+                return "Unable to determine"
+                
             return answer
             
         except Exception as e:
@@ -102,7 +128,6 @@ def run_and_submit_all(username: str, agent_code: str):
         except Exception as e:
              results_log.append({"Task ID": task_id, "Question": question_text, "Submitted Answer": f"AGENT ERROR: {e}"})
         
-        # Small pause to prevent DDG from blocking us
         time.sleep(2)
 
     if not answers_payload:
