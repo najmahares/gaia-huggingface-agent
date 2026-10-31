@@ -41,7 +41,7 @@ class AdvancedAgent:
         print("Initializing AdvancedAgent...")
         
         self.model = LiteLLMModel(
-            model_id="groq/llama-3.3-70b-versatile",
+            model_id="groq/openai/gpt-oss-120b",
             api_key=os.getenv("GROQ_API_KEY"),
             temperature=0.1,
         )
