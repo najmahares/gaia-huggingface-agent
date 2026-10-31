@@ -4,7 +4,7 @@ import time
 import gradio as gr
 import requests
 import pandas as pd
-from smolagents import ToolCallingAgent, DuckDuckGoSearchTool, Tool, LiteLLMModel
+from smolagents import CodeAgent, DuckDuckGoSearchTool, Tool, LiteLLMModel
 
 DEFAULT_API_URL = "https://agents-course-unit4-scoring.hf.space"
 
@@ -24,7 +24,7 @@ class WikipediaSearchTool(Tool):
         try:
             return wikipedia.summary(query, sentences=5)
         except Exception as e:
-            return f"Wikipedia search failed. Try web_search instead."
+            return f"Wikipedia search failed."
 
 GAIA_SYSTEM_PROMPT = """You are an expert AI agent solving the GAIA benchmark.
 Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
@@ -32,9 +32,7 @@ Your answers are graded by EXACT STRING MATCH. Follow these rules strictly:
 2. For numbers, use digits (e.g., "42" not "forty-two").
 3. For names, use exact spelling and capitalization.
 4. If a list is requested, return comma-separated values.
-5. Use the web search tools to find facts.
-6. **CRITICAL:** If the search results already contain the answer, DO NOT search again. Stop and output the answer.
-7. If a tool fails with an error, DO NOT retry it. Use the information you already have.
+5. CRITICAL: When you find the answer in the search results, STOP immediately. Do not run another search. Output the answer using the final_answer tool.
 """
 
 class AdvancedAgent:
@@ -42,20 +40,25 @@ class AdvancedAgent:
         print("Initializing AdvancedAgent...")
         
         self.model = LiteLLMModel(
-            model_id="groq/openai/gpt-oss-120b",
-            api_key=os.getenv("GROQ_API_KEY"),
-            temperature=0.1,
+            model_id="gemini/gemini-3.8-flash",
+            api_key=os.getenv("GEMINI_API_KEY"),
+            reasoning_effort="low",  # Lowers latency from 30-120s to 3-7s per step
         )
         
         self.tools = [
-            DuckDuckGoSearchTool(max_results=3, rate_limit=2.0),
+            DuckDuckGoSearchTool(max_results=5, rate_limit=2.0),
             WikipediaSearchTool(),
         ]
         
-        self.agent = ToolCallingAgent(
+        self.agent = CodeAgent(
             model=self.model,
             tools=self.tools,
-            max_steps=4, # Lowered from 10 to prevent token limits
+            add_base_tools=True,
+            additional_authorized_imports=[
+                "pandas", "numpy", "requests", "datetime", "re",
+                "json", "math", "statistics", "itertools", "collections",
+            ],
+            max_steps=6,
             verbosity_level=1,
         )
         
@@ -118,8 +121,8 @@ def run_and_submit_all(username: str, agent_code: str):
         except Exception as e:
              results_log.append({"Task ID": task_id, "Question": question_text, "Submitted Answer": f"AGENT ERROR: {e}"})
         
-        print("Sleeping for 5 seconds to avoid API rate limits...")
-        time.sleep(5)
+        print("Sleeping for 3 seconds...")
+        time.sleep(3)
 
     if not answers_payload:
         return "Agent did not produce any answers.", pd.DataFrame(results_log)
