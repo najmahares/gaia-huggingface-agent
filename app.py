@@ -13,56 +13,36 @@ class FastAgent:
     def __init__(self):
         print("Initializing FastAgent...")
         self.client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-        
-        self.model_id = None
-        try:
-            models = self.client.models.list()
-            available_models = [m.id for m in models.data]
-            
-            preferred_models = [
-                "llama-3.3-70b-versatile",
-                "openai/gpt-oss-120b",  # 120b is slightly smarter than 20b
-                "openai/gpt-oss-20b",
-                "qwen/qwen3.8-27b"
-            ]
-            
-            for pref in preferred_models:
-                if pref in available_models:
-                    self.model_id = pref
-                    break
-            
-            if not self.model_id:
-                self.model_id = "openai/gpt-oss-20b"
-                        
-            print(f"Selected model: {self.model_id}")
-        except Exception as e:
-            print(f"Could not fetch model list: {e}")
-            self.model_id = "openai/gpt-oss-20b"
+        self.model_id = "openai/gpt-oss-120b" # Using the smarter 120b model
 
     def __call__(self, question: str) -> str:
         print(f"Searching for: {question[:60]}...")
         
         search_context = ""
         try:
-            results = list(DDGS().text(question, max_results=3))
+            # Increased to 6 results for better context
+            results = list(DDGS().text(question, max_results=6))
             for r in results:
                 search_context += f"Title: {r.get('title', '')}\nSnippet: {r.get('body', '')}\n\n"
         except Exception as e:
             search_context = "No search results found."
 
-        prompt = f"""You are solving the GAIA benchmark. Your answer is graded by EXACT STRING MATCH.
-        
+        prompt = f"""You are an expert AI agent solving the GAIA benchmark.
+Your answers are graded by EXACT STRING MATCH.
+
 Web Search Results:
 {search_context}
 
 Question: {question}
 
 Rules for your answer:
-- Return ONLY the exact answer. No explanations, no conversational text.
-- If it's a number, use digits (e.g., 42).
-- If it's a name, use exact spelling.
-- If it's a list, use comma-separated values.
-- If the search results do not contain the answer, use your best guess.
+1. Return ONLY the exact answer. No explanations, no conversational text.
+2. If the search results contain the answer, use it.
+3. If the search results DO NOT contain the answer, you MUST use your own pre-trained knowledge to provide the most likely answer. 
+4. DO NOT output "Unable to determine" or "I don't know". You must provide a guess. A guess is always better than giving up.
+5. If it's a number, use digits (e.g., 42).
+6. If it's a name, use exact spelling.
+7. If it's a list, use comma-separated values.
 
 Answer:"""
 
@@ -71,7 +51,7 @@ Answer:"""
                 messages=[{"role": "user", "content": prompt}],
                 model=self.model_id,
                 temperature=0.0,
-                max_tokens=500  # INCREASED from 50 to 500 so it has room to think!
+                max_tokens=1024 # Plenty of room to think
             )
             answer = response.choices[0].message.content
             answer = answer.strip() if answer else ""
@@ -80,14 +60,15 @@ Answer:"""
             answer = re.sub(r"(?i)^the answer is[:\s]+", "", answer).strip()
             answer = re.sub(r"(?i)^final answer[:\s]+", "", answer).strip()
             
-            if not answer:
-                return "Unable to determine"
+            # If it still somehow returns empty, just return a generic guess
+            if not answer or "unable to determine" in answer.lower():
+                return "Unknown"
                 
             return answer
             
         except Exception as e:
             print(f"Groq API Error: {e}")
-            return "Unable to determine"
+            return "Unknown"
 
 def run_and_submit_all(username: str, agent_code: str):
     if not username or not agent_code:
